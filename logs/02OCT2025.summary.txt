@@ -1,0 +1,15 @@
+Analysis complete!
+Generated 71 plots in: results/plots/02OCT2025
+Results saved to: results/plots/02OCT2025/statistical_results.csv
+
+Top 10 most significant differences (p < 0.05):
+Cells Selected Selected - Cell Width [µm] - Mean per Well: p=1.02e-66
+Cells Selected Selected - Cell Ratio Width to Length - Mean per Well: p=2.21e-58
+Cells Selected Selected - Cell Width [µm] - StdDev per Well: p=4.40e-58
+Cells Selected Selected - Cell Roundness - Mean per Well: p=1.77e-53
+Cells Selected Selected - Cell Contact Area with Neighbors [%] - Mean per Well: p=6.03e-52
+Cells Selected - Cell Area [µm²] - Median per Well: p=2.13e-50
+Cells Selected Selected - uninfected - Mean per Well: p=2.24e-48
+faction infected: p=2.24e-48
+Cells Selected Selected - wMel - Mean per Well: p=2.24e-48
+Cells Selected Selected - Cell Contact Area with Neighbors [%] - StdDev per Well: p=1.91e-45

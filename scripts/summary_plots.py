@@ -21,8 +21,17 @@ output_dir.mkdir(parents=True, exist_ok=True)
 sns.set_style("whitegrid")
 plt.rcParams['figure.dpi'] = 100
 
-# Read the data
-df = pd.read_csv(args.input, sep='\t', skiprows=7)
+# Read the data - skip metadata lines and [Data] line
+df = pd.read_csv(args.input, sep='\t', skiprows=8)
+
+# Strip whitespace from column names
+df.columns = df.columns.str.strip()
+
+# Check if Cell Type column exists
+if 'Cell Type' not in df.columns:
+    print("Error: 'Cell Type' column not found!")
+    print("Available columns:", df.columns.tolist())
+    exit(1)
 
 # Clean up cell type column
 df['Cell Type'] = df['Cell Type'].str.strip()

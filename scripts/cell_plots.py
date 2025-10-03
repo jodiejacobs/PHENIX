@@ -24,11 +24,19 @@ output_dir.mkdir(parents=True, exist_ok=True)
 sns.set_style("whitegrid")
 plt.rcParams['figure.dpi'] = 100
 
-# Read the data
+# Read the data - note: object files have different structure than plate files
+# Adjust skiprows based on your specific file structure
 df = pd.read_csv(args.input, sep='\t', skiprows=8)
 
+# Strip whitespace from column names
+df.columns = df.columns.str.strip()
+
 # Clean up cell type column
-df['Cell Type'] = df['Cell Type'].str.strip()
+if 'Cell Type' in df.columns:
+    df['Cell Type'] = df['Cell Type'].str.strip()
+else:
+    print("Warning: 'Cell Type' column not found!")
+    print("Available columns:", df.columns.tolist()[:10])  # Show first 10 columns
 
 # Filter to only include rows with cell type data
 df_filtered = df[df['Cell Type'].isin(['JW18 uninf.', 'JW18 wMel'])].copy()
