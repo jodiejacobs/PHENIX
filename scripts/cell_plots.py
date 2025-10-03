@@ -5,13 +5,27 @@ from scipy import stats
 import seaborn as sns
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import LabelEncoder
+import argparse
+from pathlib import Path
+
+# Parse command line arguments
+parser = argparse.ArgumentParser(description='Single cell analysis with linear regression for infected vs uninfected cells')
+parser.add_argument('-i', '--input', required=True, help='Input file path (e.g., object.head.txt)')
+parser.add_argument('-o', '--output', required=True, help='Output directory for plots and results')
+parser.add_argument('-n', '--num_features', type=int, default=20, 
+                    help='Number of features to analyze (default: 20, use -1 for all)')
+args = parser.parse_args()
+
+# Create output directory if it doesn't exist
+output_dir = Path(args.output)
+output_dir.mkdir(parents=True, exist_ok=True)
 
 # Set style
 sns.set_style("whitegrid")
 plt.rcParams['figure.dpi'] = 100
 
 # Read the data
-df = pd.read_csv('object.head.txt', sep='\t', skiprows=8)
+df = pd.read_csv(args.input, sep='\t', skiprows=8)
 
 # Clean up cell type column
 df['Cell Type'] = df['Cell Type'].str.strip()
@@ -110,7 +124,8 @@ def analyze_measurement(data, measurement_col, output_prefix='cell'):
     
     # Save plot
     safe_filename = measurement_col.replace('/', '_').replace(' ', '_').replace('[', '').replace(']', '')
-    plt.savefig(f'{output_prefix}_{safe_filename}.png', dpi=300, bbox_inches='tight')
+    output_path = output_dir / f'{output_prefix}_{safe_filename}.png'
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
     
     return {
@@ -131,8 +146,15 @@ def analyze_measurement(data, measurement_col, output_prefix='cell'):
 
 # Analyze all measurements
 results = []
-for i, col in enumerate(numeric_cols[:20]):  # Limit to first 20 for manageable output
-    print(f"Processing {i+1}/{min(20, len(numeric_cols))}: {col}")
+
+# Determine how many features to analyze
+if args.num_features == -1:
+    features_to_analyze = numeric_cols
+else:
+    features_to_analyze = numeric_cols[:args.num_features]
+
+for i, col in enumerate(features_to_analyze):
+    print(f"Processing {i+1}/{len(features_to_analyze)}: {col}")
     result = analyze_measurement(df_filtered, col, output_prefix='single_cell')
     if result:
         results.append(result)
@@ -142,7 +164,8 @@ results_df = pd.DataFrame(results)
 results_df = results_df.sort_values('p_value_regression')
 
 # Save results
-results_df.to_csv('single_cell_regression_results.csv', index=False)
+results_path = output_dir / 'single_cell_regression_results.csv'
+results_df.to_csv(results_path, index=False)
 
 print("\n" + "="*80)
 print("ANALYSIS COMPLETE")
@@ -162,5 +185,5 @@ for idx, row in results_df.head(10).iterrows():
     print(f"  Effect size: {row['effect_size']:.4f}")
 
 print("\n" + "="*80)
-print(f"\nResults saved to 'single_cell_regression_results.csv'")
-print(f"Plots saved as 'single_cell_[measurement].png'")
+print(f"\nResults saved to: {results_path}")
+print(f"Plots saved in: {output_dir}")

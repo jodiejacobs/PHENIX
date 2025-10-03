@@ -3,13 +3,26 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy import stats
 import seaborn as sns
+import argparse
+import os
+from pathlib import Path
+
+# Parse command line arguments
+parser = argparse.ArgumentParser(description='Compare cell measurements between infected and uninfected cells')
+parser.add_argument('-i', '--input', required=True, help='Input file path (e.g., PlateResults.txt)')
+parser.add_argument('-o', '--output', required=True, help='Output directory for plots and results')
+args = parser.parse_args()
+
+# Create output directory if it doesn't exist
+output_dir = Path(args.output)
+output_dir.mkdir(parents=True, exist_ok=True)
 
 # Set style
 sns.set_style("whitegrid")
 plt.rcParams['figure.dpi'] = 100
 
 # Read the data
-df = pd.read_csv('PlateResults.txt', sep='\t', skiprows=7)
+df = pd.read_csv(args.input, sep='\t', skiprows=7)
 
 # Clean up cell type column
 df['Cell Type'] = df['Cell Type'].str.strip()
@@ -98,7 +111,8 @@ def analyze_and_plot(data, column_name, output_prefix='plot'):
     
     # Save plot
     safe_filename = column_name.replace('/', '_').replace(' ', '_').replace('[', '').replace(']', '')
-    plt.savefig(f'{output_prefix}_{safe_filename}.png', dpi=300, bbox_inches='tight')
+    output_path = output_dir / f'{output_prefix}_{safe_filename}.png'
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
     
     return {
@@ -127,10 +141,11 @@ results_df = pd.DataFrame(results)
 results_df = results_df.sort_values('p_value')
 
 # Save results to CSV
-results_df.to_csv('statistical_results.csv', index=False)
+results_path = output_dir / 'statistical_results.csv'
+results_df.to_csv(results_path, index=False)
 print(f"\nAnalysis complete!")
-print(f"Generated {len(results)} plots")
-print(f"Results saved to 'statistical_results.csv'")
+print(f"Generated {len(results)} plots in: {output_dir}")
+print(f"Results saved to: {results_path}")
 
 # Display top significant results
 print("\nTop 10 most significant differences (p < 0.05):")
