@@ -25,18 +25,34 @@ sns.set_style("whitegrid")
 plt.rcParams['figure.dpi'] = 100
 
 # Read the data - note: object files have different structure than plate files
-# Adjust skiprows based on your specific file structure
-df = pd.read_csv(args.input, sep='\t', skiprows=8)
+# First, let's find where [Data] is located
+with open(args.input, 'r') as f:
+    for i, line in enumerate(f):
+        if line.strip() == '[Data]':
+            skip_rows = i + 1  # Skip [Data] line and use next line as header
+            break
+    else:
+        skip_rows = 8  # Default fallback
+
+print(f"Skipping {skip_rows} rows to read data...")
+
+# Use low_memory=False to avoid dtype warnings with large files
+df = pd.read_csv(args.input, sep='\t', skiprows=skip_rows, low_memory=False)
 
 # Strip whitespace from column names
 df.columns = df.columns.str.strip()
 
+print(f"Read {len(df)} rows with {len(df.columns)} columns")
+print(f"First few column names: {df.columns.tolist()[:5]}")
+
 # Clean up cell type column
 if 'Cell Type' in df.columns:
     df['Cell Type'] = df['Cell Type'].str.strip()
+    print(f"Cell types found: {df['Cell Type'].unique()}")
 else:
-    print("Warning: 'Cell Type' column not found!")
-    print("Available columns:", df.columns.tolist()[:10])  # Show first 10 columns
+    print("ERROR: 'Cell Type' column not found!")
+    print("Available columns:", df.columns.tolist())
+    exit(1)
 
 # Filter to only include rows with cell type data
 df_filtered = df[df['Cell Type'].isin(['JW18 uninf.', 'JW18 wMel'])].copy()
