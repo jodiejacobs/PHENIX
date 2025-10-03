@@ -117,32 +117,74 @@ def analyze_measurement(data, measurement_col, output_prefix='cell'):
     p_value_reg = 1 - stats.f.cdf(f_stat, 1, n - 2)
     
     # Create figure with scatter plot
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
     
-    # Plot individual cells
+    # LEFT PANEL: Traditional comparison with distributions
     for cell_type, color, label in [('JW18 uninf.', 'lightgreen', 'Uninfected'),
                                      ('JW18 wMel', 'lightblue', 'wMel')]:
         mask = df_clean['Cell Type'] == cell_type
         cell_data = df_clean[mask]
-        ax.scatter(np.random.normal(int(cell_type == 'JW18 wMel'), 0.1, len(cell_data)),
+        # Violin plot
+        parts = ax1.violinplot([cell_data[measurement_col].values], 
+                               positions=[int(cell_type == 'JW18 wMel')],
+                               widths=0.5, showmeans=False, showmedians=False)
+        for pc in parts['bodies']:
+            pc.set_facecolor(color)
+            pc.set_alpha(0.3)
+        # Scatter individual points
+        ax1.scatter(np.random.normal(int(cell_type == 'JW18 wMel'), 0.08, len(cell_data)),
                    cell_data[measurement_col],
-                   alpha=0.5, s=30, color=color, label=label, edgecolors='black', linewidth=0.5)
+                   alpha=0.3, s=10, color=color, edgecolors='none')
     
     # Add mean lines
-    ax.plot([-0.3, 0.3], [uninf.mean(), uninf.mean()], 'k-', linewidth=2, label='Mean')
-    ax.plot([0.7, 1.3], [wmel.mean(), wmel.mean()], 'k-', linewidth=2)
+    ax1.plot([-0.3, 0.3], [uninf.mean(), uninf.mean()], 'k-', linewidth=2)
+    ax1.plot([0.7, 1.3], [wmel.mean(), wmel.mean()], 'k-', linewidth=2)
     
-    # Customize plot
-    ax.set_xticks([0, 1])
-    ax.set_xticklabels(['Uninfected', 'wMel'])
-    ax.set_ylabel(measurement_col.replace('Cells Selected Selected - ', ''), 
-                  fontsize=10, fontweight='bold')
-    ax.set_title(f'{measurement_col.replace("Cells Selected Selected - ", "")}\n'
-                 f'Regression: β={model.coef_[0]:.4f}, p={p_value_reg:.2e} | '
-                 f't-test: p={p_value_ttest:.2e}',
-                 fontsize=10)
-    ax.legend(loc='upper right')
-    ax.set_xlim(-0.5, 1.5)
+    ax1.set_xticks([0, 1])
+    ax1.set_xticklabels(['Uninfected', 'wMel'])
+    ax1.set_ylabel(measurement_col.replace('Cells Selected Selected - ', ''), 
+                   fontsize=10, fontweight='bold')
+    ax1.set_xlim(-0.5, 1.5)
+    ax1.set_title('Distribution Comparison', fontsize=11, fontweight='bold')
+    
+    # RIGHT PANEL: Regression plot showing actual linear relationship
+    # Plot all points
+    colors_scatter = df_clean['Cell_Type_Numeric'].map({0: 'lightgreen', 1: 'lightblue'})
+    ax2.scatter(df_clean['Cell_Type_Numeric'], 
+               df_clean[measurement_col],
+               alpha=0.4, s=20, c=colors_scatter, edgecolors='black', linewidth=0.3)
+    
+    # Plot regression line
+    x_line = np.array([0, 1])
+    y_line = model.predict(x_line.reshape(-1, 1))
+    ax2.plot(x_line, y_line, 'r-', linewidth=3, label=f'y = {model.intercept_:.2f} + {model.coef_[0]:.2f}x')
+    
+    # Add confidence interval
+    residual_std = np.std(residuals)
+    y_err = 1.96 * residual_std  # 95% CI
+    ax2.fill_between(x_line, y_line - y_err, y_line + y_err, alpha=0.2, color='red')
+    
+    # Add group means as larger points
+    ax2.scatter([0, 1], [uninf.mean(), wmel.mean()], 
+               s=200, c=['darkgreen', 'darkblue'], 
+               marker='D', edgecolors='black', linewidth=2, 
+               zorder=10, label='Group means')
+    
+    ax2.set_xticks([0, 1])
+    ax2.set_xticklabels(['Uninfected (0)', 'wMel (1)'])
+    ax2.set_xlabel('Cell Type (Coded)', fontsize=10, fontweight='bold')
+    ax2.set_ylabel(measurement_col.replace('Cells Selected Selected - ', ''), 
+                   fontsize=10, fontweight='bold')
+    ax2.set_xlim(-0.1, 1.1)
+    ax2.legend(loc='best', fontsize=8)
+    ax2.set_title(f'Linear Regression\nR² = {r_squared:.4f}, p = {p_value_reg:.2e}', 
+                 fontsize=11, fontweight='bold')
+    ax2.grid(True, alpha=0.3)
+    
+    # Overall title
+    fig.suptitle(f'{measurement_col.replace("Cells Selected Selected - ", "")}\n'
+                 f'Coefficient: β = {model.coef_[0]:.4f} | t-test p = {p_value_ttest:.2e}',
+                 fontsize=12, fontweight='bold')
     
     plt.tight_layout()
     
@@ -211,3 +253,127 @@ for idx, row in results_df.head(10).iterrows():
 print("\n" + "="*80)
 print(f"\nResults saved to: {results_path}")
 print(f"Plots saved in: {output_dir}")
+
+# CREATE SUMMARY VISUALIZATION
+print("\nCreating summary plots...")
+
+# Calculate percent change and fold change
+results_df['percent_change'] = ((results_df['mean_wmel'] - results_df['mean_uninf']) / 
+                                 results_df['mean_uninf'].abs()) * 100
+results_df['fold_change'] = results_df['mean_wmel'] / results_df['mean_uninf']
+results_df['log2_fold_change'] = np.log2(results_df['fold_change'])
+
+# Create a comprehensive summary figure
+fig = plt.figure(figsize=(16, 12))
+gs = fig.add_gridspec(3, 2, hspace=0.3, wspace=0.3)
+
+# 1. Volcano plot (effect size vs significance)
+ax1 = fig.add_subplot(gs[0, 0])
+significant = results_df['p_value_regression'] < 0.05
+ax1.scatter(results_df.loc[~significant, 'coefficient'], 
+           -np.log10(results_df.loc[~significant, 'p_value_regression']),
+           alpha=0.5, s=40, color='gray', label='Not significant')
+ax1.scatter(results_df.loc[significant, 'coefficient'], 
+           -np.log10(results_df.loc[significant, 'p_value_regression']),
+           alpha=0.7, s=60, color='red', label='p < 0.05')
+ax1.axhline(-np.log10(0.05), linestyle='--', color='black', linewidth=1)
+ax1.axvline(0, linestyle='-', color='black', linewidth=0.5)
+ax1.set_xlabel('Effect Size (β coefficient)', fontsize=11, fontweight='bold')
+ax1.set_ylabel('-log10(p-value)', fontsize=11, fontweight='bold')
+ax1.set_title('Volcano Plot: Magnitude vs Significance', fontsize=12, fontweight='bold')
+ax1.legend()
+ax1.grid(True, alpha=0.3)
+
+# 2. Top changes by absolute coefficient
+ax2 = fig.add_subplot(gs[0, 1])
+top_changes = results_df.nlargest(15, 'coefficient')
+colors_bar = ['lightblue' if x > 0 else 'lightcoral' for x in top_changes['coefficient']]
+y_pos = np.arange(len(top_changes))
+ax2.barh(y_pos, top_changes['coefficient'], color=colors_bar, edgecolor='black')
+ax2.set_yticks(y_pos)
+ax2.set_yticklabels([x.replace('Cells Selected Selected - ', '')[:40] 
+                      for x in top_changes['measurement']], fontsize=8)
+ax2.set_xlabel('Coefficient (wMel effect)', fontsize=11, fontweight='bold')
+ax2.set_title('Top 15 Measurements Most Increased by Infection', fontsize=12, fontweight='bold')
+ax2.axvline(0, color='black', linewidth=1)
+ax2.grid(True, alpha=0.3, axis='x')
+
+# 3. Percent change
+ax3 = fig.add_subplot(gs[1, 0])
+top_pct = results_df.nlargest(15, 'percent_change')
+y_pos = np.arange(len(top_pct))
+colors_bar = ['lightblue' if x > 0 else 'lightcoral' for x in top_pct['percent_change']]
+ax3.barh(y_pos, top_pct['percent_change'], color=colors_bar, edgecolor='black')
+ax3.set_yticks(y_pos)
+ax3.set_yticklabels([x.replace('Cells Selected Selected - ', '')[:40] 
+                      for x in top_pct['measurement']], fontsize=8)
+ax3.set_xlabel('Percent Change (%)', fontsize=11, fontweight='bold')
+ax3.set_title('Top 15 by Percent Change (wMel vs Uninf)', fontsize=12, fontweight='bold')
+ax3.axvline(0, color='black', linewidth=1)
+ax3.grid(True, alpha=0.3, axis='x')
+
+# 4. R-squared distribution
+ax4 = fig.add_subplot(gs[1, 1])
+ax4.hist(results_df['r_squared'], bins=30, edgecolor='black', color='skyblue', alpha=0.7)
+ax4.axvline(results_df['r_squared'].median(), color='red', linestyle='--', 
+           linewidth=2, label=f'Median = {results_df["r_squared"].median():.3f}')
+ax4.set_xlabel('R² (Variance Explained)', fontsize=11, fontweight='bold')
+ax4.set_ylabel('Count', fontsize=11, fontweight='bold')
+ax4.set_title('Distribution of Model Fit (R²)', fontsize=12, fontweight='bold')
+ax4.legend()
+ax4.grid(True, alpha=0.3)
+
+# 5. Effect size vs percent change
+ax5 = fig.add_subplot(gs[2, 0])
+scatter = ax5.scatter(results_df['percent_change'], results_df['coefficient'],
+                     c=-np.log10(results_df['p_value_regression']), 
+                     cmap='RdYlBu_r', s=60, alpha=0.6, edgecolors='black', linewidth=0.5)
+ax5.set_xlabel('Percent Change (%)', fontsize=11, fontweight='bold')
+ax5.set_ylabel('Coefficient (β)', fontsize=11, fontweight='bold')
+ax5.set_title('Effect Size vs Percent Change', fontsize=12, fontweight='bold')
+ax5.axhline(0, color='black', linewidth=0.5)
+ax5.axvline(0, color='black', linewidth=0.5)
+plt.colorbar(scatter, ax=ax5, label='-log10(p-value)')
+ax5.grid(True, alpha=0.3)
+
+# 6. Summary statistics table
+ax6 = fig.add_subplot(gs[2, 1])
+ax6.axis('off')
+summary_stats = [
+    ['Total Measurements', f'{len(results_df)}'],
+    ['Significant (p<0.05)', f'{(results_df["p_value_regression"] < 0.05).sum()}'],
+    ['Highly Sig (p<0.001)', f'{(results_df["p_value_regression"] < 0.001).sum()}'],
+    ['', ''],
+    ['Increased by wMel', f'{(results_df["coefficient"] > 0).sum()}'],
+    ['Decreased by wMel', f'{(results_df["coefficient"] < 0).sum()}'],
+    ['', ''],
+    ['Median R²', f'{results_df["r_squared"].median():.4f}'],
+    ['Median |coefficient|', f'{results_df["coefficient"].abs().median():.4f}'],
+    ['Median % change', f'{results_df["percent_change"].median():.2f}%'],
+]
+table = ax6.table(cellText=summary_stats, cellLoc='left',
+                 colWidths=[0.6, 0.4], loc='center',
+                 bbox=[0, 0, 1, 1])
+table.auto_set_font_size(False)
+table.set_fontsize(11)
+table.scale(1, 2.5)
+for i in range(len(summary_stats)):
+    if i in [0, 4]:
+        for j in range(2):
+            table[(i, j)].set_facecolor('#CCE5FF')
+            table[(i, j)].set_text_props(weight='bold')
+ax6.set_title('Summary Statistics', fontsize=12, fontweight='bold', pad=20)
+
+fig.suptitle('Infection Effect Summary: How wMel Changes Cellular Measurements', 
+            fontsize=14, fontweight='bold', y=0.995)
+
+# Save summary plot
+summary_path = output_dir / 'infection_effect_summary.png'
+plt.savefig(summary_path, dpi=300, bbox_inches='tight')
+print(f"Summary plot saved to: {summary_path}")
+plt.close()
+
+# Save enhanced results with percent change
+enhanced_results_path = output_dir / 'single_cell_regression_results_enhanced.csv'
+results_df.to_csv(enhanced_results_path, index=False)
+print(f"Enhanced results saved to: {enhanced_results_path}")
