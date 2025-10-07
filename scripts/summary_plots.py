@@ -107,8 +107,8 @@ def analyze_and_plot(data, column_name, output_prefix='plot'):
     # Perform t-test
     t_stat, p_value = stats.ttest_ind(uninf_data, wmel_data)
     
-    # Create plot with 2x2 inch size
-    fig, ax = plt.subplots(figsize=(2, 2))
+    # Create plot with figure size adjusted so plot area is 2x2 inches
+    fig, ax = plt.subplots(figsize=(2.8, 2.8))
     
     x_pos = [0, 1]
     means = [uninf_mean, wmel_mean]
