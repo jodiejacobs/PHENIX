@@ -17,9 +17,29 @@ args = parser.parse_args()
 output_dir = Path(args.output)
 output_dir.mkdir(parents=True, exist_ok=True)
 
-# Set style
-sns.set_style("whitegrid")
-plt.rcParams['figure.dpi'] = 100
+# Set style - no grid
+sns.set_style("white")
+plt.rcParams['figure.dpi'] = 300
+plt.rcParams['font.size'] = 6
+plt.rcParams['axes.labelsize'] = 6
+plt.rcParams['axes.titlesize'] = 6
+plt.rcParams['xtick.labelsize'] = 6
+plt.rcParams['ytick.labelsize'] = 6
+plt.rcParams['legend.fontsize'] = 6
+
+# Define color mapping
+COLOR_MAP = {
+    'JW18DOX': '#8fcb84',
+    'JW18 uninf.': '#8fcb84',
+    'JW18 uninf': '#8fcb84',
+    'JW18wMel': '#09aa4b',
+    'JW18 wMel': '#09aa4b',
+    'S2DOX': '#fab280',
+    'S2 uninf.': '#fab280',
+    'S2 uninf': '#fab280',
+    'S2wMel': '#d25727',
+    'S2 wMel': '#d25727'
+}
 
 # Read the data - skip metadata lines and [Data] line
 df = pd.read_csv(args.input, sep='\t', skiprows=8)
@@ -45,17 +65,34 @@ exclude_cols = ['Row', 'Column', 'Plane', 'Timepoint', 'Number of Analyzed Field
 numeric_cols = [col for col in df.columns if col not in exclude_cols and 
                 pd.api.types.is_numeric_dtype(df[col])]
 
-# Filter to only include rows with cell type data
-df_filtered = df[df['Cell Type'].isin(['JW18 uninf.', 'JW18 wMel'])]
+# Filter to only include rows with cell type data (handles both JW18 and S2)
+valid_cell_types = [ct for ct in df['Cell Type'].unique() if ct in COLOR_MAP.keys()]
+df_filtered = df[df['Cell Type'].isin(valid_cell_types)]
 
 # Function to perform t-test and create plot for each column
 def analyze_and_plot(data, column_name, output_prefix='plot'):
     """
     Analyze a single measurement column and create a bar plot with significance
     """
+    # Determine which cell line we're working with
+    cell_types = data['Cell Type'].unique()
+    
+    # Try to identify infected vs uninfected pairs
+    uninf_type = None
+    wmel_type = None
+    
+    for ct in cell_types:
+        if 'uninf' in ct.lower() or 'dox' in ct.lower():
+            uninf_type = ct
+        elif 'wmel' in ct.lower():
+            wmel_type = ct
+    
+    if uninf_type is None or wmel_type is None:
+        return None
+    
     # Group by cell type
-    uninf_data = data[data['Cell Type'] == 'JW18 uninf.'][column_name].dropna()
-    wmel_data = data[data['Cell Type'] == 'JW18 wMel'][column_name].dropna()
+    uninf_data = data[data['Cell Type'] == uninf_type][column_name].dropna()
+    wmel_data = data[data['Cell Type'] == wmel_type][column_name].dropna()
     
     # Skip if insufficient data
     if len(uninf_data) < 2 or len(wmel_data) < 2:
@@ -70,25 +107,40 @@ def analyze_and_plot(data, column_name, output_prefix='plot'):
     # Perform t-test
     t_stat, p_value = stats.ttest_ind(uninf_data, wmel_data)
     
-    # Create plot
-    fig, ax = plt.subplots(figsize=(8, 6))
+    # Create plot with 2x2 inch size
+    fig, ax = plt.subplots(figsize=(2, 2))
     
     x_pos = [0, 1]
     means = [uninf_mean, wmel_mean]
     stds = [uninf_std, wmel_std]
-    labels = ['JW18 uninf', 'JW18 wMel']
-    colors = ['lightgreen', 'lightblue']
+    
+    # Keep full labels with infection status
+    labels = [uninf_type, wmel_type]
+    
+    # Get colors from mapping
+    colors = [COLOR_MAP.get(uninf_type, '#8fcb84'), 
+              COLOR_MAP.get(wmel_type, '#09aa4b')]
     
     # Create bar plot with error bars
-    bars = ax.bar(x_pos, means, yerr=stds, capsize=10, 
-                   color=colors, edgecolor='black', linewidth=1.5, alpha=0.8)
+    bars = ax.bar(x_pos, means, yerr=stds, capsize=3, 
+                   color=colors, edgecolor='black', linewidth=0.5, alpha=0.9)
     
-    # Customize plot
-    ax.set_ylabel('Value', fontsize=12, fontweight='bold')
-    ax.set_title(f'{column_name}\np-value: {p_value:.4e}', 
-                 fontsize=12, fontweight='bold')
+    # Customize plot - 6pt fonts, show p-value
+    ax.set_ylabel('Value', fontsize=6)
     ax.set_xticks(x_pos)
-    ax.set_xticklabels(labels, fontsize=11)
+    ax.set_xticklabels(labels, fontsize=6)
+    ax.tick_params(axis='both', labelsize=6, width=0.5)
+    
+    # # Add p-value to plot
+    # ax.text(0.02, 0.98, f'p={p_value:.3e}', 
+    #         transform=ax.transAxes, fontsize=6, 
+    #         ha='left', va='top')
+    
+    # Remove top and right spines
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_linewidth(0.5)
+    ax.spines['bottom'].set_linewidth(0.5)
     
     # Add significance indicator
     y_max = max(means[0] + stds[0], means[1] + stds[1])
@@ -106,22 +158,27 @@ def analyze_and_plot(data, column_name, output_prefix='plot'):
     # Draw significance line
     ax.plot([x_pos[0], x_pos[0], x_pos[1], x_pos[1]], 
             [y_pos, y_pos*1.02, y_pos*1.02, y_pos], 
-            'k-', linewidth=1.5)
+            'k-', linewidth=0.5)
     ax.text((x_pos[0] + x_pos[1])/2, y_pos*1.03, sig_text, 
-            ha='center', fontsize=14, fontweight='bold')
+            ha='center', fontsize=6)
+    
+    # Add p-value text
+    ax.text(0.98, 0.98, f'p={p_value:.2e}', 
+            transform=ax.transAxes, fontsize=6, 
+            ha='right', va='top')
     
     # Add sample sizes
     ax.text(x_pos[0], -y_max*0.15, f'n={len(uninf_data)}', 
-            ha='center', fontsize=9)
+            ha='center', fontsize=6)
     ax.text(x_pos[1], -y_max*0.15, f'n={len(wmel_data)}', 
-            ha='center', fontsize=9)
+            ha='center', fontsize=6)
     
     plt.tight_layout()
     
     # Save plot
     safe_filename = column_name.replace('/', '_').replace(' ', '_').replace('[', '').replace(']', '')
-    output_path = output_dir / f'{output_prefix}_{safe_filename}.png'
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    output_path = output_dir / f'{output_prefix}_{safe_filename}.svg'
+    plt.savefig(output_path, format='svg', bbox_inches='tight')
     plt.close()
     
     return {
