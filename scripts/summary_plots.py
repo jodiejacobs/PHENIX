@@ -167,11 +167,11 @@ def analyze_and_plot(data, column_name, output_prefix='plot'):
             transform=ax.transAxes, fontsize=6, 
             ha='right', va='top')
     
-    # Add sample sizes
-    ax.text(x_pos[0], -y_max*0.15, f'n={len(uninf_data)}', 
-            ha='center', fontsize=6)
-    ax.text(x_pos[1], -y_max*0.15, f'n={len(wmel_data)}', 
-            ha='center', fontsize=6)
+    # # Add sample sizes
+    # ax.text(x_pos[0], -y_max*0.15, f'n={len(uninf_data)}', 
+    #         ha='center', fontsize=6)
+    # ax.text(x_pos[1], -y_max*0.15, f'n={len(wmel_data)}', 
+    #         ha='center', fontsize=6)
     
     plt.tight_layout()
     
