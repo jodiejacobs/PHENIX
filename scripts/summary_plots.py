@@ -1,11 +1,11 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy import stats
 import seaborn as sns
 import argparse
 import os
 from pathlib import Path
+from scipy import stats
 
 # Parse command line arguments
 parser = argparse.ArgumentParser(description='Compare cell measurements between infected and uninfected cells')
@@ -48,10 +48,13 @@ df = pd.read_csv(args.input, sep='\t', skiprows=8)
 df.columns = df.columns.str.strip()
 
 # Check if Cell Type column exists
+
 if 'Cell Type' not in df.columns:
     print("Error: 'Cell Type' column not found!")
     print("Available columns:", df.columns.tolist())
     exit(1)
+
+df['Cell Type'] = df['Cell Type'].astype(str).str.strip()
 
 # Clean up cell type column
 df['Cell Type'] = df['Cell Type'].str.strip()
@@ -74,67 +77,111 @@ def analyze_and_plot(data, column_name, output_prefix='plot'):
     """
     Analyze a single measurement column and create a bar plot with significance
     """
-    # Determine which cell line we're working with
-    cell_types = data['Cell Type'].unique()
+    # Separate into JW18 and S2 groups
+    jw18_uninf = None
+    jw18_wmel = None
+    s2_uninf = None
+    s2_wmel = None
     
-    # Try to identify infected vs uninfected pairs
-    uninf_type = None
-    wmel_type = None
+    for ct in data['Cell Type'].unique():
+        if 'jw18' in ct.lower():
+            if 'uninf' in ct.lower() or 'dox' in ct.lower():
+                jw18_uninf = ct
+            elif 'wmel' in ct.lower():
+                jw18_wmel = ct
+        elif 's2' in ct.lower():
+            if 'uninf' in ct.lower() or 'dox' in ct.lower():
+                s2_uninf = ct
+            elif 'wmel' in ct.lower():
+                s2_wmel = ct
     
-    for ct in cell_types:
-        if 'uninf' in ct.lower() or 'dox' in ct.lower():
-            uninf_type = ct
-        elif 'wmel' in ct.lower():
-            wmel_type = ct
+    # Check if we have at least one complete pair
+    has_jw18 = jw18_uninf is not None and jw18_wmel is not None
+    has_s2 = s2_uninf is not None and s2_wmel is not None
     
-    if uninf_type is None or wmel_type is None:
+    if not has_jw18 and not has_s2:
         return None
     
-    # Group by cell type
-    uninf_data = data[data['Cell Type'] == uninf_type][column_name].dropna()
-    wmel_data = data[data['Cell Type'] == wmel_type][column_name].dropna()
+    # Prepare data for plotting
+    x_pos = []
+    means = []
+    stds = []
+    labels = []
+    colors = []
+    results = {}
     
-    # Skip if insufficient data
-    if len(uninf_data) < 2 or len(wmel_data) < 2:
+    position = 0
+    
+    # Add JW18 data if available
+    if has_jw18:
+        jw18_uninf_data = data[data['Cell Type'] == jw18_uninf][column_name].dropna()
+        jw18_wmel_data = data[data['Cell Type'] == jw18_wmel][column_name].dropna()
+        
+        if len(jw18_uninf_data) >= 2 and len(jw18_wmel_data) >= 2:
+            x_pos.extend([position, position + 1])
+            means.extend([jw18_uninf_data.mean(), jw18_wmel_data.mean()])
+            stds.extend([jw18_uninf_data.std(), jw18_wmel_data.std()])
+            labels.extend([jw18_uninf, jw18_wmel])
+            colors.extend([COLOR_MAP.get(jw18_uninf, '#8fcb84'), 
+                          COLOR_MAP.get(jw18_wmel, '#09aa4b')])
+            
+            # Perform t-test for JW18
+            t_stat, p_value = stats.ttest_ind(jw18_uninf_data, jw18_wmel_data)
+            results['jw18'] = {
+                'uninf_mean': jw18_uninf_data.mean(),
+                'uninf_std': jw18_uninf_data.std(),
+                'uninf_n': len(jw18_uninf_data),
+                'wmel_mean': jw18_wmel_data.mean(),
+                'wmel_std': jw18_wmel_data.std(),
+                'wmel_n': len(jw18_wmel_data),
+                't_statistic': t_stat,
+                'p_value': p_value,
+                'x_pos': [position, position + 1]
+            }
+            position += 3  # Leave gap between groups
+    
+    # Add S2 data if available
+    if has_s2:
+        s2_uninf_data = data[data['Cell Type'] == s2_uninf][column_name].dropna()
+        s2_wmel_data = data[data['Cell Type'] == s2_wmel][column_name].dropna()
+        
+        if len(s2_uninf_data) >= 2 and len(s2_wmel_data) >= 2:
+            x_pos.extend([position, position + 1])
+            means.extend([s2_uninf_data.mean(), s2_wmel_data.mean()])
+            stds.extend([s2_uninf_data.std(), s2_wmel_data.std()])
+            labels.extend([s2_uninf, s2_wmel])
+            colors.extend([COLOR_MAP.get(s2_uninf, '#fab280'), 
+                          COLOR_MAP.get(s2_wmel, '#d25727')])
+            
+            # Perform t-test for S2
+            t_stat, p_value = stats.ttest_ind(s2_uninf_data, s2_wmel_data)
+            results['s2'] = {
+                'uninf_mean': s2_uninf_data.mean(),
+                'uninf_std': s2_uninf_data.std(),
+                'uninf_n': len(s2_uninf_data),
+                'wmel_mean': s2_wmel_data.mean(),
+                'wmel_std': s2_wmel_data.std(),
+                'wmel_n': len(s2_wmel_data),
+                't_statistic': t_stat,
+                'p_value': p_value,
+                'x_pos': [position, position + 1]
+            }
+    
+    if len(means) == 0:
         return None
     
-    # Calculate statistics
-    uninf_mean = uninf_data.mean()
-    uninf_std = uninf_data.std()
-    wmel_mean = wmel_data.mean()
-    wmel_std = wmel_data.std()
+    # Create plot
+    fig, ax = plt.subplots(figsize=(3.5, 2.8))
     
-    # Perform t-test
-    t_stat, p_value = stats.ttest_ind(uninf_data, wmel_data)
-    
-    # Create plot with figure size adjusted so plot area is 2x2 inches
-    fig, ax = plt.subplots(figsize=(2.8, 2.8))
-    
-    x_pos = [0, 1]
-    means = [uninf_mean, wmel_mean]
-    stds = [uninf_std, wmel_std]
-    
-    # Keep full labels with infection status
-    labels = [uninf_type, wmel_type]
-    
-    # Get colors from mapping
-    colors = [COLOR_MAP.get(uninf_type, '#8fcb84'), 
-              COLOR_MAP.get(wmel_type, '#09aa4b')]
-    
-    # Create bar plot with error bars
+    # Create bar plot
     bars = ax.bar(x_pos, means, yerr=stds, capsize=3, 
                    color=colors, edgecolor='black', linewidth=0.5, alpha=0.9)
     
-    # Customize plot - 6pt fonts, show p-value
+    # Customize plot
     ax.set_ylabel('Value', fontsize=6)
     ax.set_xticks(x_pos)
-    ax.set_xticklabels(labels, fontsize=6)
+    ax.set_xticklabels(labels, fontsize=6, rotation=45, ha='right')
     ax.tick_params(axis='both', labelsize=6, width=0.5)
-    
-    # # Add p-value to plot
-    # ax.text(0.02, 0.98, f'p={p_value:.3e}', 
-    #         transform=ax.transAxes, fontsize=6, 
-    #         ha='left', va='top')
     
     # Remove top and right spines
     ax.spines['top'].set_visible(False)
@@ -142,36 +189,36 @@ def analyze_and_plot(data, column_name, output_prefix='plot'):
     ax.spines['left'].set_linewidth(0.5)
     ax.spines['bottom'].set_linewidth(0.5)
     
-    # Add significance indicator
-    y_max = max(means[0] + stds[0], means[1] + stds[1])
-    y_pos = y_max * 1.1
+    # Add significance indicators for each comparison
+    y_max = max([m + s for m, s in zip(means, stds)])
     
-    if p_value < 0.001:
-        sig_text = '***'
-    elif p_value < 0.01:
-        sig_text = '**'
-    elif p_value < 0.05:
-        sig_text = '*'
-    else:
-        sig_text = 'ns'
-    
-    # Draw significance line
-    ax.plot([x_pos[0], x_pos[0], x_pos[1], x_pos[1]], 
-            [y_pos, y_pos*1.02, y_pos*1.02, y_pos], 
-            'k-', linewidth=0.5)
-    ax.text((x_pos[0] + x_pos[1])/2, y_pos*1.03, sig_text, 
-            ha='center', fontsize=6)
-    
-    # Add p-value text
-    ax.text(0.98, 0.98, f'p={p_value:.2e}', 
-            transform=ax.transAxes, fontsize=6, 
-            ha='right', va='top')
-    
-    # # Add sample sizes
-    # ax.text(x_pos[0], -y_max*0.15, f'n={len(uninf_data)}', 
-    #         ha='center', fontsize=6)
-    # ax.text(x_pos[1], -y_max*0.15, f'n={len(wmel_data)}', 
-    #         ha='center', fontsize=6)
+    for comparison, data_dict in results.items():
+        x_positions = data_dict['x_pos']
+        p_val = data_dict['p_value']
+        
+        y_pos = y_max * 1.1
+        
+        if p_val < 0.001:
+            sig_text = '***'
+        elif p_val < 0.01:
+            sig_text = '**'
+        elif p_val < 0.05:
+            sig_text = '*'
+        else:
+            sig_text = 'ns'
+        
+        # Draw significance line
+        ax.plot([x_positions[0], x_positions[0], x_positions[1], x_positions[1]], 
+                [y_pos, y_pos*1.02, y_pos*1.02, y_pos], 
+                'k-', linewidth=0.5)
+        ax.text((x_positions[0] + x_positions[1])/2, y_pos*1.03, sig_text, 
+                ha='center', fontsize=6)
+        
+        # Add p-value text
+        ax.text((x_positions[0] + x_positions[1])/2, y_pos*1.08, f'p={p_val:.2e}', 
+                ha='center', fontsize=5)
+        
+        y_max = y_pos * 1.15  # Adjust for next comparison
     
     plt.tight_layout()
     
@@ -181,40 +228,42 @@ def analyze_and_plot(data, column_name, output_prefix='plot'):
     plt.savefig(output_path, format='svg', bbox_inches='tight')
     plt.close()
     
+    # Return combined results
     return {
         'column': column_name,
-        'uninf_mean': uninf_mean,
-        'uninf_std': uninf_std,
-        'uninf_n': len(uninf_data),
-        'wmel_mean': wmel_mean,
-        'wmel_std': wmel_std,
-        'wmel_n': len(wmel_data),
-        't_statistic': t_stat,
-        'p_value': p_value
+        'results': results
     }
-
 # Analyze all numeric columns
 results = []
 print("Analyzing columns and generating plots...")
 for i, col in enumerate(numeric_cols):
-    print(f"Processing {i+1}/{len(numeric_cols)}: {col}")
+    # print(f"Processing {i+1}/{len(numeric_cols): {col}")
     result = analyze_and_plot(df_filtered, col, output_prefix='comparison')
     if result:
-        results.append(result)
+        # Flatten results for CSV
+        for cell_line, cell_stats in result['results'].items():
+            results.append({
+                'column': result['column'],
+                'cell_line': cell_line,
+                **cell_stats
+            })
 
 # Create summary dataframe
-results_df = pd.DataFrame(results)
-results_df = results_df.sort_values('p_value')
-
-# Save results to CSV
-results_path = output_dir / 'statistical_results.csv'
-results_df.to_csv(results_path, index=False)
-print(f"\nAnalysis complete!")
-print(f"Generated {len(results)} plots in: {output_dir}")
-print(f"Results saved to: {results_path}")
-
-# Display top significant results
-print("\nTop 10 most significant differences (p < 0.05):")
-sig_results = results_df[results_df['p_value'] < 0.05].head(10)
-for idx, row in sig_results.iterrows():
-    print(f"{row['column']}: p={row['p_value']:.2e}")
+if len(results) > 0:
+    results_df = pd.DataFrame(results)
+    results_df = results_df.sort_values('p_value')
+    
+    # Save results to CSV
+    results_path = output_dir / 'statistical_results.csv'
+    results_df.to_csv(results_path, index=False)
+    print(f"\nAnalysis complete!")
+    print(f"Generated plots in: {output_dir}")
+    print(f"Results saved to: {results_path}")
+    
+    # Display top significant results
+    print("\nTop 10 most significant differences (p < 0.05):")
+    sig_results = results_df[results_df['p_value'] < 0.05].head(10)
+    for idx, row in sig_results.iterrows():
+        print(f"{row['column']} ({row['cell_line']}): p={row['p_value']:.2e}")
+else:
+    print("\nNo valid comparisons found!")
